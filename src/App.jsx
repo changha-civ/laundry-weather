@@ -11,15 +11,26 @@ function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const getBaseTime = () => {
+  const getBaseDateTime = () => {
     const now = new Date();
-    let hour = now.getHours() - 1;
-    if (hour < 0) hour = 23;
-    return `${String(hour).padStart(2, "0")}00`;
+    const target = new Date(now);
+
+    target.setMinutes(target.getMinutes() - 45);
+
+    const year = target.getFullYear();
+    const month = String(target.getMonth() + 1).padStart(2, "0");
+    const date = String(target.getDate()).padStart(2, "0");
+    const hour = String(target.getHours()).padStart(2, "0");
+
+    return {
+      base_date: `${year}${month}${date}`,
+      base_time: `${hour}00`,
+    };
   };
 
   const getRainText = (rainType) => {
     const code = String(rainType);
+
     if (code === "0") return "비 없음";
     if (code === "1") return "비";
     if (code === "2") return "비/눈";
@@ -27,6 +38,7 @@ function App() {
     if (code === "5") return "빗방울";
     if (code === "6") return "빗방울/눈날림";
     if (code === "7") return "눈날림";
+
     return "정보 없음";
   };
 
@@ -50,6 +62,7 @@ function App() {
     let sn =
       Math.tan(Math.PI * 0.25 + slat2 * 0.5) /
       Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+
     sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
 
     let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
@@ -62,8 +75,10 @@ function App() {
     ra = (re * sf) / Math.pow(ra, sn);
 
     let theta = lon * DEGRAD - olon;
+
     if (theta > Math.PI) theta -= 2.0 * Math.PI;
     if (theta < -Math.PI) theta += 2.0 * Math.PI;
+
     theta *= sn;
 
     const nx = Math.floor(ra * Math.sin(theta) + XO + 0.5);
@@ -85,36 +100,40 @@ function App() {
 
     const data = await response.json();
 
-    if (!data.documents || data.documents.length === 0) {
+    if (!response.ok || !data.documents || data.documents.length === 0) {
       throw new Error("주소 검색 결과 없음");
     }
 
     const place = data.documents[0];
 
+    const displayName =
+      place.address_name ||
+      place.road_address_name ||
+      place.place_name ||
+      keyword;
+
     return {
       name: place.place_name || keyword,
-      address: place.address_name || place.road_address_name || keyword,
+      address: displayName,
       lat: Number(place.y),
       lon: Number(place.x),
     };
   };
 
   const fetchWeatherByGrid = async ({ nx, ny, displayName }) => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const date = String(today.getDate()).padStart(2, "0");
-    const base_date = `${year}${month}${date}`;
-    const base_time = getBaseTime();
+    const { base_date, base_time } = getBaseDateTime();
 
-    const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey=${KMA_API_KEY}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+    const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey=${decodeURIComponent(
+      KMA_API_KEY
+    )}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
 
     const response = await fetch(url);
     const data = await response.json();
 
+    const resultCode = data?.response?.header?.resultCode;
     const items = data?.response?.body?.items?.item;
 
-    if (!items) {
+    if (resultCode !== "00" || !items) {
       throw new Error("기상청 API 응답 오류");
     }
 
@@ -154,7 +173,10 @@ function App() {
         displayName: place.address || place.name,
       });
     } catch (error) {
-      setError("주소 검색 또는 날씨 조회에 실패했습니다. 더 정확한 지역명으로 다시 입력해주세요.");
+      console.error(error);
+      setError(
+        "주소 검색 또는 날씨 조회에 실패했습니다. 예: '용인시 처인구 역북동', '서울 강남역'처럼 더 정확히 입력해주세요."
+      );
       setWeather(null);
     } finally {
       setLoading(false);
@@ -229,6 +251,7 @@ function App() {
 
   const getCurrentTimeText = () => {
     const now = new Date();
+
     return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(
       2,
       "0"
@@ -258,19 +281,21 @@ function App() {
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSearch();
             }}
-            placeholder="지역/주소 입력 예: 용인 역북동, 서울 강남역"
+            placeholder="지역/주소 입력 예: 용인시 처인구 역북동, 서울 강남역"
           />
           <button onClick={handleSearch}>조회하기</button>
         </div>
 
         <p className="city-guide">
-          전국 지역 검색 가능 · 예: 용인 역북동, 명지대 자연캠퍼스, 서울 강남역
+          전국 지역 검색 가능 · 예: 용인시 처인구 역북동, 명지대 자연캠퍼스,
+          서울 강남역
         </p>
       </section>
 
       {loading && (
         <p className="loading">
-          ⏳ 주소를 검색하고 기상청 데이터를 불러와 빨래 건조 조건을 분석 중입니다...
+          ⏳ 주소를 검색하고 기상청 데이터를 불러와 빨래 건조 조건을 분석
+          중입니다...
         </p>
       )}
 
@@ -316,11 +341,17 @@ function App() {
           <div className="clothes-box">
             <h3>👕 빨래 종류별 추천</h3>
             <div className="clothes-list">
-              <p>얇은 옷: {laundryStatus.className === "rain" ? "비추천" : "가능"}</p>
-              <p>수건류: {laundryStatus.className === "good" ? "가능" : "주의"}</p>
+              <p>
+                얇은 옷: {laundryStatus.className === "rain" ? "비추천" : "가능"}
+              </p>
+              <p>
+                수건류: {laundryStatus.className === "good" ? "가능" : "주의"}
+              </p>
               <p>
                 이불/후드티:{" "}
-                {laundryStatus.className === "good" ? "가능" : "실내 건조 추천"}
+                {laundryStatus.className === "good"
+                  ? "가능"
+                  : "실내 건조 추천"}
               </p>
             </div>
           </div>
@@ -333,7 +364,8 @@ function App() {
       )}
 
       <footer>
-        본 서비스는 카카오 주소검색 API와 기상청 단기예보 조회서비스 데이터를 활용하였습니다.
+        본 서비스는 카카오 주소검색 API와 기상청 단기예보 조회서비스 데이터를
+        활용하였습니다.
         <br />
         출처: Kakao Developers, 공공데이터포털(data.go.kr), 기상청
       </footer>
