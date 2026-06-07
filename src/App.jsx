@@ -142,7 +142,7 @@ function App() {
       return {
         time: `${time.slice(0, 2)}시`,
         score,
-        label: score >= 75 ? "추천" : score >= 50 ? "보통" : "비추천",
+        label: score >= 75 ? "추천" : score >= 50 ? "보통" : "주의",
       };
     });
   };
@@ -223,8 +223,9 @@ function App() {
         time: "약 3~4시간",
         score,
         smellRisk,
-        message: "빨래가 비교적 잘 마를 가능성이 높습니다.",
-        tip: "얇은 옷과 수건류 모두 건조하기 좋은 조건입니다.",
+        message: "빨래가 빠르게 마르기 좋은 날씨입니다.",
+        tip: "얇은 옷, 수건류 모두 건조하기 좋은 조건입니다.",
+        action: "실외 건조 추천",
       };
     }
 
@@ -236,21 +237,23 @@ function App() {
         time: "약 5~7시간",
         score,
         smellRisk,
-        message: "건조는 가능하지만 시간이 오래 걸릴 수 있습니다.",
-        tip: "두꺼운 옷은 간격을 넓게 두고 말리는 것을 추천합니다.",
+        message: "건조는 가능하지만 평소보다 시간이 걸릴 수 있습니다.",
+        tip: "옷 사이 간격을 넓히고 선풍기 순환을 함께 사용하세요.",
+        action: "실내·실외 모두 가능",
       };
     }
 
     if (score >= 30) {
       return {
         level: "냄새 위험",
-        emoji: "😥",
+        emoji: "💧",
         className: "bad",
         time: "약 8시간 이상",
         score,
         smellRisk,
-        message: "습도가 높아 냄새 발생 가능성이 있습니다.",
-        tip: "제습기 사용 또는 선풍기 순환을 함께 하는 것이 좋습니다.",
+        message: "습도가 높아 빨래 냄새가 발생할 가능성이 있습니다.",
+        tip: "제습기 또는 에어컨 제습 모드를 함께 사용하는 것을 추천합니다.",
+        action: "제습기 사용 추천",
       };
     }
 
@@ -261,8 +264,9 @@ function App() {
       time: "실외 건조 비추천",
       score,
       smellRisk,
-      message: "비 또는 높은 습도로 인해 실외 건조는 비추천입니다.",
-      tip: "창문을 닫고 제습기나 에어컨 제습 모드를 사용하는 것이 좋습니다.",
+      message: "비 또는 높은 습도로 인해 실외 건조에 적합하지 않습니다.",
+      tip: "창문을 닫고 제습기, 선풍기, 에어컨 제습 모드를 함께 사용하세요.",
+      action: "실내 건조 권장",
     };
   };
 
@@ -281,10 +285,10 @@ function App() {
     <div className={`app ${laundryStatus ? laundryStatus.className : ""}`}>
       <section className="hero">
         <div className="badge">자취생 맞춤 기상 서비스</div>
-        <h1>자취생 빨래 건조 위험도 예측 서비스</h1>
+        <h1>빨래 건조 위험도 예측 서비스</h1>
         <p className="subtitle">
-          카카오 주소검색 API와 기상청 API 데이터를 활용하여 지역별 빨래 건조 점수,
-          냄새 위험도, 추천 시간대를 제공합니다.
+          지역 기상 데이터를 활용해 빨래 건조 점수, 냄새 위험도, 예상 건조 시간,
+          시간대별 추천도를 제공하는 생활 밀착형 웹서비스입니다.
         </p>
 
         <div className="search-box">
@@ -300,7 +304,7 @@ function App() {
         </div>
 
         <p className="city-guide">
-          전국 지역 검색 가능 · 예: 용인시 처인구 역북동, 명지대 자연캠퍼스, 서울 강남역
+          전국 지역 검색 가능 · 예: 명지대 자연캠퍼스, 역북동, 서울 강남역
         </p>
       </section>
 
@@ -308,84 +312,99 @@ function App() {
       {error && <div className="error-box">{error}</div>}
 
       {weather && laundryStatus && (
-        <main className="content-card">
-          <div className={`result-box ${laundryStatus.className}`}>
-            <div className="weather-icon">{laundryStatus.emoji}</div>
-            <h2>{selectedCity} 빨래 건조 상태</h2>
-            <h3>{laundryStatus.level}</h3>
-            <p>{laundryStatus.message}</p>
-            <span>{getCurrentTimeText()}</span>
-          </div>
+        <main className="dashboard">
+          <section className={`summary-card ${laundryStatus.className}`}>
+            <div className="summary-left">
+              <div className="weather-icon">{laundryStatus.emoji}</div>
+              <p className="location-name">{selectedCity}</p>
+              <h2>{laundryStatus.level}</h2>
+              <p className="summary-message">{laundryStatus.message}</p>
+              <span>{getCurrentTimeText()}</span>
+            </div>
 
-          <section className="score-section">
-            <div className="score-circle">
-              <strong>{laundryStatus.score}</strong>
-              <span>/100</span>
-            </div>
-            <div className="score-text">
-              <h3>건조 점수</h3>
-              <p>높을수록 빨래가 빠르게 마르고 냄새 위험이 낮습니다.</p>
-              <div className="bar">
-                <div style={{ width: `${laundryStatus.score}%` }}></div>
+            <div className="summary-right">
+              <div className="score-circle">
+                <strong>{laundryStatus.score}</strong>
+                <span>/100</span>
               </div>
-            </div>
-            <div className="risk-card">
-              <h4>냄새 위험도</h4>
-              <p>{laundryStatus.smellRisk}%</p>
+
+              <div className="score-info">
+                <div>
+                  <p className="mini-label">건조 점수</p>
+                  <h3>{laundryStatus.action}</h3>
+                  <p>점수가 높을수록 빨래가 빠르게 마르고 냄새 위험이 낮습니다.</p>
+                </div>
+                <div className="bar">
+                  <div style={{ width: `${laundryStatus.score}%` }}></div>
+                </div>
+              </div>
+
+              <div className="risk-card">
+                <p>냄새 위험도</p>
+                <strong>{laundryStatus.smellRisk}%</strong>
+              </div>
             </div>
           </section>
 
-          <div className="weather-grid">
+          <section className="weather-grid">
             <div className="info-card">
-              <h4>🌡️ 기온</h4>
-              <p>{weather.temp}℃</p>
+              <span>🌡️</span>
+              <p>기온</p>
+              <strong>{weather.temp}℃</strong>
             </div>
             <div className="info-card">
-              <h4>💧 습도</h4>
-              <p>{weather.humidity}%</p>
+              <span>💧</span>
+              <p>습도</p>
+              <strong>{weather.humidity}%</strong>
             </div>
             <div className="info-card">
-              <h4>💨 풍속</h4>
-              <p>{weather.wind}m/s</p>
+              <span>💨</span>
+              <p>풍속</p>
+              <strong>{weather.wind}m/s</strong>
             </div>
             <div className="info-card">
-              <h4>🌧️ 강수형태</h4>
-              <p>{weather.rainText}</p>
+              <span>🌧️</span>
+              <p>강수형태</p>
+              <strong>{weather.rainText}</strong>
             </div>
-          </div>
+          </section>
 
-          <div className="estimate-box">
-            <h3>⏱️ 예상 건조 시간</h3>
-            <p>{laundryStatus.time}</p>
-          </div>
+          <section className="estimate-card">
+            <div>
+              <p className="mini-label">예상 건조 시간</p>
+              <h2>{laundryStatus.time}</h2>
+            </div>
+            <p>{laundryStatus.tip}</p>
+          </section>
 
-          <div className="hourly-box">
-            <h3>🕒 시간대별 건조 추천</h3>
+          <section className="section-card">
+            <div className="section-title">
+              <h3>시간대별 건조 추천</h3>
+              <p>현재 예보 기준으로 가까운 시간대의 건조 가능성을 비교합니다.</p>
+            </div>
             <div className="hourly-list">
               {hourlyList.map((item) => (
                 <div className="hour-card" key={item.time}>
-                  <strong>{item.time}</strong>
-                  <span>{item.score}점</span>
-                  <p>{item.label}</p>
+                  <p>{item.time}</p>
+                  <strong>{item.score}점</strong>
+                  <span>{item.label}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="clothes-box">
-            <h3>👕 빨래 종류별 추천</h3>
-            <div className="clothes-list">
-              <p>얇은 옷: {laundryStatus.score >= 40 ? "가능" : "비추천"}</p>
-              <p>수건류: {laundryStatus.score >= 70 ? "가능" : "주의"}</p>
-              <p>후드티: {laundryStatus.score >= 75 ? "가능" : "실내 건조 추천"}</p>
-              <p>이불: {laundryStatus.score >= 80 ? "가능" : "비추천"}</p>
+          <section className="section-card">
+            <div className="section-title">
+              <h3>빨래 종류별 추천</h3>
+              <p>건조 점수에 따라 자취생이 자주 말리는 빨래를 분류했습니다.</p>
             </div>
-          </div>
-
-          <div className="tip-box">
-            <h3>💡 오늘의 자취 빨래 팁</h3>
-            <p>{laundryStatus.tip}</p>
-          </div>
+            <div className="clothes-list">
+              <div>얇은 옷 <strong>{laundryStatus.score >= 40 ? "가능" : "비추천"}</strong></div>
+              <div>수건류 <strong>{laundryStatus.score >= 70 ? "가능" : "주의"}</strong></div>
+              <div>후드티 <strong>{laundryStatus.score >= 75 ? "가능" : "실내 추천"}</strong></div>
+              <div>이불 <strong>{laundryStatus.score >= 80 ? "가능" : "비추천"}</strong></div>
+            </div>
+          </section>
         </main>
       )}
 
