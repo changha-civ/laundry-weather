@@ -14,36 +14,53 @@ function App() {
     대구: { nx: 89, ny: 90 },
     광주: { nx: 58, ny: 74 },
     제주: { nx: 52, ny: 38 },
+    성남: { nx: 62, ny: 123 },
+    고양: { nx: 57, ny: 128 },
+    천안: { nx: 63, ny: 110 },
+    세종: { nx: 66, ny: 103 },
+    울산: { nx: 102, ny: 84 },
   };
 
-  const [inputCity, setInputCity] = useState("서울");
-  const [selectedCity, setSelectedCity] = useState("서울");
+  const [inputCity, setInputCity] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
   const [weather, setWeather] = useState(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchWeather(selectedCity);
-  }, [selectedCity]);
+  const normalizeCity = (city) => city.replace(/\s/g, "").trim();
 
   const getBaseTime = () => {
     const now = new Date();
     let hour = now.getHours() - 1;
-
     if (hour < 0) hour = 23;
-
     return `${String(hour).padStart(2, "0")}00`;
   };
 
+  const getRainText = (rainType) => {
+    const code = String(rainType);
+    if (code === "0") return "비 없음";
+    if (code === "1") return "비";
+    if (code === "2") return "비/눈";
+    if (code === "3") return "눈";
+    if (code === "5") return "빗방울";
+    if (code === "6") return "빗방울/눈날림";
+    if (code === "7") return "눈날림";
+    return "정보 없음";
+  };
+
   const fetchWeather = async (city) => {
-    const location = locations[city];
+    const cleanCity = normalizeCity(city);
+    const location = locations[cleanCity];
 
     if (!location) {
-      setError("지원하지 않는 지역입니다. 예: 서울, 수원, 용인, 인천, 부산");
+      setError("지원하지 않는 지역입니다. 아래 지원 지역 중 하나를 입력해주세요.");
       setWeather(null);
       return;
     }
 
+    setLoading(true);
     setError("");
+    setWeather(null);
 
     const today = new Date();
     const year = today.getFullYear();
@@ -60,20 +77,28 @@ function App() {
       const response = await fetch(url);
       const data = await response.json();
 
-      const items = data.response.body.items.item;
+      const items = data?.response?.body?.items?.item;
+
+      if (!items) {
+        throw new Error("API 응답 오류");
+      }
 
       const result = {
         temp: items.find((item) => item.category === "T1H")?.fcstValue,
         humidity: items.find((item) => item.category === "REH")?.fcstValue,
         rainType: items.find((item) => item.category === "PTY")?.fcstValue,
         wind: items.find((item) => item.category === "WSD")?.fcstValue,
+        rainText: getRainText(items.find((item) => item.category === "PTY")?.fcstValue),
         baseTime: base_time,
       };
 
+      setSelectedCity(cleanCity);
       setWeather(result);
     } catch (error) {
       setError("날씨 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
       setWeather(null);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,38 +130,52 @@ function App() {
         level: "잘 마름",
         emoji: "☀️",
         className: "good",
+        time: "약 3~4시간",
         message: "빨래가 비교적 잘 마를 가능성이 높습니다.",
         tip: "얇은 옷과 수건류 모두 건조하기 좋은 조건입니다.",
       };
-    } else if (score >= 5) {
+    }
+
+    if (score >= 5) {
       return {
         level: "느리게 마름",
         emoji: "🌥️",
         className: "normal",
+        time: "약 5~7시간",
         message: "건조는 가능하지만 시간이 오래 걸릴 수 있습니다.",
         tip: "두꺼운 옷은 간격을 넓게 두고 말리는 것을 추천합니다.",
       };
-    } else if (score >= -25) {
+    }
+
+    if (score >= -25) {
       return {
         level: "냄새 위험",
         emoji: "😥",
         className: "bad",
+        time: "약 8시간 이상",
         message: "습도가 높아 냄새 발생 가능성이 있습니다.",
         tip: "제습기 사용 또는 짧은 환기를 함께 하는 것이 좋습니다.",
       };
-    } else {
-      return {
-        level: "실내 건조 추천",
-        emoji: "🌧️",
-        className: "rain",
-        message: "비 또는 높은 습도로 인해 실외 건조는 비추천입니다.",
-        tip: "창문을 닫고 제습기나 에어컨 제습 모드를 사용하는 것이 좋습니다.",
-      };
     }
+
+    return {
+      level: "실내 건조 추천",
+      emoji: "🌧️",
+      className: "rain",
+      time: "실외 건조 비추천",
+      message: "비 또는 높은 습도로 인해 실외 건조는 비추천입니다.",
+      tip: "창문을 닫고 제습기나 에어컨 제습 모드를 사용하는 것이 좋습니다.",
+    };
   };
 
   const handleSearch = () => {
-    setSelectedCity(inputCity.trim());
+    if (!inputCity.trim()) {
+      setError("지역명을 입력해주세요. 예: 서울, 수원, 용인");
+      setWeather(null);
+      return;
+    }
+
+    fetchWeather(inputCity);
   };
 
   const getCurrentTimeText = () => {
@@ -155,9 +194,12 @@ function App() {
     <div className={`app ${laundryStatus ? laundryStatus.className : ""}`}>
       <section className="hero">
         <div className="badge">자취생 맞춤 기상 서비스</div>
-        <h1>오늘 빨래 말려도 될까?</h1>
+
+        <h1>자취생 빨래 건조 위험도 예측 서비스</h1>
+
         <p className="subtitle">
-          기상청 API 데이터를 활용하여 지역별 빨래 건조 위험도를 예측합니다.
+          기상청 API 데이터를 활용하여 지역별 기온, 습도, 풍속, 강수형태를
+          분석하고 빨래 건조 가능성을 예측합니다.
         </p>
 
         <div className="search-box">
@@ -173,13 +215,18 @@ function App() {
         </div>
 
         <p className="city-guide">
-          지원 지역: 서울 · 수원 · 용인 · 인천 · 부산 · 대전 · 대구 · 광주 · 제주
+          지원 지역: 서울 · 수원 · 용인 · 인천 · 부산 · 대전 · 대구 · 광주 · 제주 ·
+          성남 · 고양 · 천안 · 세종 · 울산
         </p>
       </section>
 
+      {loading && (
+        <p className="loading">⏳ 기상청 데이터를 불러와 빨래 건조 조건을 분석 중입니다...</p>
+      )}
+
       {error && <div className="error-box">{error}</div>}
 
-      {weather && laundryStatus ? (
+      {weather && laundryStatus && (
         <main className="content-card">
           <div className={`result-box ${laundryStatus.className}`}>
             <div className="weather-icon">{laundryStatus.emoji}</div>
@@ -194,14 +241,26 @@ function App() {
               <h4>🌡️ 기온</h4>
               <p>{weather.temp}℃</p>
             </div>
+
             <div className="info-card">
               <h4>💧 습도</h4>
               <p>{weather.humidity}%</p>
             </div>
+
             <div className="info-card">
               <h4>💨 풍속</h4>
               <p>{weather.wind}m/s</p>
             </div>
+
+            <div className="info-card">
+              <h4>🌧️ 강수형태</h4>
+              <p>{weather.rainText}</p>
+            </div>
+          </div>
+
+          <div className="estimate-box">
+            <h3>⏱️ 예상 건조 시간</h3>
+            <p>{laundryStatus.time}</p>
           </div>
 
           <div className="clothes-box">
@@ -209,17 +268,18 @@ function App() {
             <div className="clothes-list">
               <p>얇은 옷: {laundryStatus.className === "rain" ? "비추천" : "가능"}</p>
               <p>수건류: {laundryStatus.className === "good" ? "가능" : "주의"}</p>
-              <p>이불/후드티: {laundryStatus.className === "good" ? "가능" : "실내 건조 추천"}</p>
+              <p>
+                이불/후드티:{" "}
+                {laundryStatus.className === "good" ? "가능" : "실내 건조 추천"}
+              </p>
             </div>
           </div>
 
           <div className="tip-box">
-            <h3>💡 오늘의 빨래 팁</h3>
+            <h3>💡 실내 건조 추천 행동</h3>
             <p>{laundryStatus.tip}</p>
           </div>
         </main>
-      ) : (
-        !error && <p className="loading">날씨 데이터를 불러오는 중...</p>
       )}
 
       <footer>
