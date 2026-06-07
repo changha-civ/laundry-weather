@@ -1,33 +1,15 @@
 import "./App.css";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 function App() {
-  const API_KEY = import.meta.env.VITE_KMA_API_KEY;
-
-  const locations = {
-    서울: { nx: 60, ny: 127 },
-    수원: { nx: 60, ny: 121 },
-    용인: { nx: 64, ny: 119 },
-    인천: { nx: 55, ny: 124 },
-    부산: { nx: 98, ny: 76 },
-    대전: { nx: 67, ny: 100 },
-    대구: { nx: 89, ny: 90 },
-    광주: { nx: 58, ny: 74 },
-    제주: { nx: 52, ny: 38 },
-    성남: { nx: 62, ny: 123 },
-    고양: { nx: 57, ny: 128 },
-    천안: { nx: 63, ny: 110 },
-    세종: { nx: 66, ny: 103 },
-    울산: { nx: 102, ny: 84 },
-  };
+  const KMA_API_KEY = import.meta.env.VITE_KMA_API_KEY;
+  const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
 
   const [inputCity, setInputCity] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [weather, setWeather] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const normalizeCity = (city) => city.replace(/\s/g, "").trim();
 
   const getBaseTime = () => {
     const now = new Date();
@@ -48,12 +30,112 @@ function App() {
     return "정보 없음";
   };
 
-  const fetchWeather = async (city) => {
-    const cleanCity = normalizeCity(city);
-    const location = locations[cleanCity];
+  const convertToGrid = (lat, lon) => {
+    const RE = 6371.00877;
+    const GRID = 5.0;
+    const SLAT1 = 30.0;
+    const SLAT2 = 60.0;
+    const OLON = 126.0;
+    const OLAT = 38.0;
+    const XO = 43;
+    const YO = 136;
 
-    if (!location) {
-      setError("지원하지 않는 지역입니다. 아래 지원 지역 중 하나를 입력해주세요.");
+    const DEGRAD = Math.PI / 180.0;
+    const re = RE / GRID;
+    const slat1 = SLAT1 * DEGRAD;
+    const slat2 = SLAT2 * DEGRAD;
+    const olon = OLON * DEGRAD;
+    const olat = OLAT * DEGRAD;
+
+    let sn =
+      Math.tan(Math.PI * 0.25 + slat2 * 0.5) /
+      Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
+
+    let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sf = (Math.pow(sf, sn) * Math.cos(slat1)) / sn;
+
+    let ro = Math.tan(Math.PI * 0.25 + olat * 0.5);
+    ro = (re * sf) / Math.pow(ro, sn);
+
+    let ra = Math.tan(Math.PI * 0.25 + lat * DEGRAD * 0.5);
+    ra = (re * sf) / Math.pow(ra, sn);
+
+    let theta = lon * DEGRAD - olon;
+    if (theta > Math.PI) theta -= 2.0 * Math.PI;
+    if (theta < -Math.PI) theta += 2.0 * Math.PI;
+    theta *= sn;
+
+    const nx = Math.floor(ra * Math.sin(theta) + XO + 0.5);
+    const ny = Math.floor(ro - ra * Math.cos(theta) + YO + 0.5);
+
+    return { nx, ny };
+  };
+
+  const searchAddressByKakao = async (keyword) => {
+    const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(
+      keyword
+    )}`;
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+      },
+    });
+
+    const data = await response.json();
+
+    if (!data.documents || data.documents.length === 0) {
+      throw new Error("주소 검색 결과 없음");
+    }
+
+    const place = data.documents[0];
+
+    return {
+      name: place.place_name || keyword,
+      address: place.address_name || place.road_address_name || keyword,
+      lat: Number(place.y),
+      lon: Number(place.x),
+    };
+  };
+
+  const fetchWeatherByGrid = async ({ nx, ny, displayName }) => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const date = String(today.getDate()).padStart(2, "0");
+    const base_date = `${year}${month}${date}`;
+    const base_time = getBaseTime();
+
+    const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey=${KMA_API_KEY}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    const items = data?.response?.body?.items?.item;
+
+    if (!items) {
+      throw new Error("기상청 API 응답 오류");
+    }
+
+    const rainType = items.find((item) => item.category === "PTY")?.fcstValue;
+
+    const result = {
+      temp: items.find((item) => item.category === "T1H")?.fcstValue,
+      humidity: items.find((item) => item.category === "REH")?.fcstValue,
+      rainType,
+      wind: items.find((item) => item.category === "WSD")?.fcstValue,
+      rainText: getRainText(rainType),
+      baseTime: base_time,
+    };
+
+    setSelectedCity(displayName);
+    setWeather(result);
+  };
+
+  const handleSearch = async () => {
+    if (!inputCity.trim()) {
+      setError("지역명이나 주소를 입력해주세요. 예: 용인 역북동, 서울 강남역, 부산 해운대");
       setWeather(null);
       return;
     }
@@ -62,40 +144,17 @@ function App() {
     setError("");
     setWeather(null);
 
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const date = String(today.getDate()).padStart(2, "0");
-    const base_date = `${year}${month}${date}`;
-    const base_time = getBaseTime();
-
-    const { nx, ny } = location;
-
-    const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtFcst?serviceKey=${API_KEY}&pageNo=1&numOfRows=100&dataType=JSON&base_date=${base_date}&base_time=${base_time}&nx=${nx}&ny=${ny}`;
-
     try {
-      const response = await fetch(url);
-      const data = await response.json();
+      const place = await searchAddressByKakao(inputCity.trim());
+      const { nx, ny } = convertToGrid(place.lat, place.lon);
 
-      const items = data?.response?.body?.items?.item;
-
-      if (!items) {
-        throw new Error("API 응답 오류");
-      }
-
-      const result = {
-        temp: items.find((item) => item.category === "T1H")?.fcstValue,
-        humidity: items.find((item) => item.category === "REH")?.fcstValue,
-        rainType: items.find((item) => item.category === "PTY")?.fcstValue,
-        wind: items.find((item) => item.category === "WSD")?.fcstValue,
-        rainText: getRainText(items.find((item) => item.category === "PTY")?.fcstValue),
-        baseTime: base_time,
-      };
-
-      setSelectedCity(cleanCity);
-      setWeather(result);
+      await fetchWeatherByGrid({
+        nx,
+        ny,
+        displayName: place.address || place.name,
+      });
     } catch (error) {
-      setError("날씨 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+      setError("주소 검색 또는 날씨 조회에 실패했습니다. 더 정확한 지역명으로 다시 입력해주세요.");
       setWeather(null);
     } finally {
       setLoading(false);
@@ -168,16 +227,6 @@ function App() {
     };
   };
 
-  const handleSearch = () => {
-    if (!inputCity.trim()) {
-      setError("지역명을 입력해주세요. 예: 서울, 수원, 용인");
-      setWeather(null);
-      return;
-    }
-
-    fetchWeather(inputCity);
-  };
-
   const getCurrentTimeText = () => {
     const now = new Date();
     return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(
@@ -198,8 +247,8 @@ function App() {
         <h1>자취생 빨래 건조 위험도 예측 서비스</h1>
 
         <p className="subtitle">
-          기상청 API 데이터를 활용하여 지역별 기온, 습도, 풍속, 강수형태를
-          분석하고 빨래 건조 가능성을 예측합니다.
+          카카오 주소검색 API와 기상청 API 데이터를 활용하여 지역별 기온, 습도,
+          풍속, 강수형태를 분석하고 빨래 건조 가능성을 예측합니다.
         </p>
 
         <div className="search-box">
@@ -209,19 +258,20 @@ function App() {
             onKeyDown={(e) => {
               if (e.key === "Enter") handleSearch();
             }}
-            placeholder="지역 입력 예: 서울, 수원, 용인"
+            placeholder="지역/주소 입력 예: 용인 역북동, 서울 강남역"
           />
           <button onClick={handleSearch}>조회하기</button>
         </div>
 
         <p className="city-guide">
-          지원 지역: 서울 · 수원 · 용인 · 인천 · 부산 · 대전 · 대구 · 광주 · 제주 ·
-          성남 · 고양 · 천안 · 세종 · 울산
+          전국 지역 검색 가능 · 예: 용인 역북동, 명지대 자연캠퍼스, 서울 강남역
         </p>
       </section>
 
       {loading && (
-        <p className="loading">⏳ 기상청 데이터를 불러와 빨래 건조 조건을 분석 중입니다...</p>
+        <p className="loading">
+          ⏳ 주소를 검색하고 기상청 데이터를 불러와 빨래 건조 조건을 분석 중입니다...
+        </p>
       )}
 
       {error && <div className="error-box">{error}</div>}
@@ -283,9 +333,9 @@ function App() {
       )}
 
       <footer>
-        본 서비스는 기상청 단기예보 조회서비스 데이터를 활용하였습니다.
+        본 서비스는 카카오 주소검색 API와 기상청 단기예보 조회서비스 데이터를 활용하였습니다.
         <br />
-        출처: 공공데이터포털(data.go.kr), 기상청
+        출처: Kakao Developers, 공공데이터포털(data.go.kr), 기상청
       </footer>
     </div>
   );
